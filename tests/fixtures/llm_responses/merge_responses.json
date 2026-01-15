@@ -1,0 +1,130 @@
+{
+  "description": "Mock LLM responses for merge operations (Aggregator worker)",
+  "responses": {
+    "simple_merge": {
+      "consolidated_summary": "Merged analysis of procedure division showing complete program flow from initialization through main processing loop to termination.",
+      "consolidated_facts": {
+        "call_graph_edges": [
+          {"from": "MAIN-LOGIC", "to": "INITIALIZE", "type": "perform"},
+          {"from": "MAIN-LOGIC", "to": "PROCESS-LOOP", "type": "perform"},
+          {"from": "PROCESS-LOOP", "to": "READ-RECORD", "type": "perform"},
+          {"from": "PROCESS-LOOP", "to": "PROCESS-RECORD", "type": "perform"},
+          {"from": "PROCESS-LOOP", "to": "WRITE-OUTPUT", "type": "perform"},
+          {"from": "MAIN-LOGIC", "to": "TERMINATE", "type": "perform"}
+        ],
+        "io_map": [
+          {
+            "operation": "OPEN",
+            "file_name": "CUSTOMER-FILE",
+            "record_name": null,
+            "line_number": 105,
+            "status_check": true
+          },
+          {
+            "operation": "READ",
+            "file_name": "CUSTOMER-FILE",
+            "record_name": "CUSTOMER-REC",
+            "line_number": 120,
+            "status_check": true
+          },
+          {
+            "operation": "WRITE",
+            "file_name": "OUTPUT-FILE",
+            "record_name": "OUTPUT-REC",
+            "line_number": 145,
+            "status_check": false
+          },
+          {
+            "operation": "CLOSE",
+            "file_name": "CUSTOMER-FILE",
+            "record_name": null,
+            "line_number": 200,
+            "status_check": false
+          }
+        ],
+        "error_handling_behaviors": [
+          {
+            "pattern_type": "file_status",
+            "description": "FILE STATUS check after OPEN and READ operations",
+            "line_numbers": [106, 121],
+            "related_symbols": ["WS-FILE-STATUS", "CUSTOMER-FILE"]
+          },
+          {
+            "pattern_type": "evaluate",
+            "description": "EVALUATE block for processing different record types",
+            "line_numbers": [130, 131, 132, 133],
+            "related_symbols": ["CUST-TYPE"]
+          }
+        ],
+        "symbols": [
+          {"name": "CUSTOMER-REC", "kind": "record", "attributes": {"level": "01"}, "line_number": 20},
+          {"name": "OUTPUT-REC", "kind": "record", "attributes": {"level": "01"}, "line_number": 35},
+          {"name": "WS-FILE-STATUS", "kind": "variable", "attributes": {"level": "01", "picture": "XX"}, "line_number": 50}
+        ]
+      },
+      "conflicts": [],
+      "narrative_sections": [
+        {
+          "section_id": "overview",
+          "title": "Program Overview",
+          "content": "This program reads customer records from an indexed file and writes processed output to a sequential file."
+        },
+        {
+          "section_id": "processing",
+          "title": "Main Processing",
+          "content": "The main loop reads records sequentially, validates customer type, and writes formatted output."
+        }
+      ],
+      "confidence": 0.88
+    },
+    "merge_with_conflicts": {
+      "consolidated_summary": "Merged analysis with identified conflicts between chunk analyses.",
+      "consolidated_facts": {
+        "call_graph_edges": [
+          {"from": "MAIN-LOGIC", "to": "PROCESS-RECORD", "type": "perform"}
+        ],
+        "io_map": [
+          {
+            "operation": "READ",
+            "file_name": "INPUT-FILE",
+            "record_name": "INPUT-REC",
+            "line_number": 100,
+            "status_check": true
+          }
+        ],
+        "error_handling_behaviors": [],
+        "symbols": []
+      },
+      "conflicts": [
+        {
+          "description": "Conflicting information about FILE STATUS handling - chunk 1 indicates status is checked, chunk 2 indicates it is not",
+          "input_ids": ["chunk_proc_001", "chunk_proc_002"],
+          "suggested_followup_scope": "Lines 100-120"
+        },
+        {
+          "description": "Disagreement about CUST-VALIDATION call - one chunk shows it as PERFORM, another as CALL",
+          "input_ids": ["chunk_proc_002", "chunk_proc_003"],
+          "suggested_followup_scope": "Line 125"
+        }
+      ],
+      "narrative_sections": [],
+      "confidence": 0.65
+    },
+    "partial_merge": {
+      "consolidated_summary": "Partial merge - some input chunks were missing or failed.",
+      "consolidated_facts": {
+        "call_graph_edges": [],
+        "io_map": [],
+        "error_handling_behaviors": [],
+        "symbols": []
+      },
+      "conflicts": [],
+      "narrative_sections": [],
+      "coverage": {
+        "included_input_ids": ["chunk_001", "chunk_002"],
+        "missing_input_ids": ["chunk_003", "chunk_004"]
+      },
+      "confidence": 0.50
+    }
+  }
+}

@@ -1,0 +1,128 @@
+{
+  "description": "Mock LLM responses for challenger review operations",
+  "responses": {
+    "no_issues": {
+      "issues": [],
+      "overall_assessment": "Documentation is comprehensive and accurate. No significant issues identified.",
+      "confidence": 0.95
+    },
+    "minor_issues_only": {
+      "issues": [
+        {
+          "issue_id": "issue-001",
+          "severity": "minor",
+          "question": "The documentation mentions error handling but does not specify all error codes that are checked.",
+          "doc_section_refs": ["error-handling"],
+          "suspected_scopes": [],
+          "routing_hints": {
+            "symbols": ["WS-FILE-STATUS"],
+            "paragraphs": ["HANDLE-ERROR"],
+            "files": []
+          }
+        },
+        {
+          "issue_id": "issue-002",
+          "severity": "minor",
+          "question": "Consider adding a section describing the overall program flow diagram.",
+          "doc_section_refs": ["overview"],
+          "suspected_scopes": [],
+          "routing_hints": {}
+        }
+      ],
+      "overall_assessment": "Documentation is mostly complete with minor improvement opportunities.",
+      "confidence": 0.85
+    },
+    "major_issues": {
+      "issues": [
+        {
+          "issue_id": "issue-003",
+          "severity": "major",
+          "question": "The documentation does not explain what happens when CUST-VALIDATION returns an error. What is the recovery behavior?",
+          "doc_section_refs": ["processing", "error-handling"],
+          "suspected_scopes": ["chunk_proc_002"],
+          "routing_hints": {
+            "symbols": ["CUST-VALIDATION-RC"],
+            "paragraphs": ["VALIDATE-CUSTOMER"],
+            "files": []
+          }
+        },
+        {
+          "issue_id": "issue-004",
+          "severity": "major",
+          "question": "Missing documentation for the batch restart capability. How does the program handle mid-stream failures?",
+          "doc_section_refs": [],
+          "suspected_scopes": [],
+          "routing_hints": {
+            "symbols": ["WS-CHECKPOINT", "WS-RESTART-KEY"],
+            "paragraphs": ["CHECKPOINT-LOGIC"],
+            "files": []
+          }
+        }
+      ],
+      "overall_assessment": "Documentation has significant gaps in error handling and recovery behavior.",
+      "confidence": 0.75
+    },
+    "blocker_issues": {
+      "issues": [
+        {
+          "issue_id": "issue-005",
+          "severity": "blocker",
+          "question": "The program appears to have a potential infinite loop condition when FILE STATUS is 35. This is not documented and could cause production issues.",
+          "doc_section_refs": ["processing"],
+          "suspected_scopes": ["chunk_proc_003"],
+          "routing_hints": {
+            "symbols": ["WS-FILE-STATUS"],
+            "paragraphs": ["READ-NEXT-RECORD"],
+            "files": ["CUSTOMER-FILE"]
+          }
+        },
+        {
+          "issue_id": "issue-006",
+          "severity": "blocker",
+          "question": "Critical: The CLOSE statement for OUTPUT-FILE is missing from the TERMINATE paragraph. This could cause data loss.",
+          "doc_section_refs": ["termination"],
+          "suspected_scopes": ["chunk_proc_004"],
+          "routing_hints": {
+            "paragraphs": ["TERMINATE"],
+            "files": ["OUTPUT-FILE"]
+          }
+        }
+      ],
+      "overall_assessment": "Critical issues found that could cause production failures. Must be resolved before release.",
+      "confidence": 0.90
+    },
+    "mixed_severity": {
+      "issues": [
+        {
+          "issue_id": "issue-007",
+          "severity": "blocker",
+          "question": "Undocumented external dependency on CUSTDB-API which could fail at runtime.",
+          "doc_section_refs": ["dependencies"],
+          "suspected_scopes": [],
+          "routing_hints": {
+            "symbols": ["CUSTDB-API"],
+            "paragraphs": []
+          }
+        },
+        {
+          "issue_id": "issue-008",
+          "severity": "major",
+          "question": "The error recovery section does not explain how partial updates are rolled back.",
+          "doc_section_refs": ["error-handling"],
+          "suspected_scopes": ["chunk_proc_002"],
+          "routing_hints": {}
+        },
+        {
+          "issue_id": "issue-009",
+          "severity": "minor",
+          "question": "Consider documenting the expected file record counts for verification.",
+          "doc_section_refs": ["termination"],
+          "suspected_scopes": [],
+          "routing_hints": {}
+        }
+      ],
+      "overall_assessment": "Mix of critical and minor issues. Blocker must be resolved immediately.",
+      "confidence": 0.80
+    }
+  }
+}

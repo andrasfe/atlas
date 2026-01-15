@@ -1,0 +1,225 @@
+{
+  "description": "Mock LLM responses for chunk analysis (Scribe worker)",
+  "responses": {
+    "procedure_division": {
+      "summary": "This chunk contains the main procedure division with primary business logic for customer record processing.",
+      "facts": {
+        "symbols_defined": [
+          {
+            "name": "WS-CUSTOMER-ID",
+            "kind": "variable",
+            "attributes": {"level": "01", "picture": "X(10)"},
+            "line_number": 45
+          },
+          {
+            "name": "WS-PROCESS-FLAG",
+            "kind": "variable",
+            "attributes": {"level": "01", "picture": "X(1)"},
+            "line_number": 46
+          }
+        ],
+        "symbols_used": ["WS-CUSTOMER-ID", "WS-PROCESS-FLAG", "CUSTOMER-FILE", "WS-STATUS"],
+        "entrypoints": ["MAIN-LOGIC"],
+        "paragraphs_defined": ["MAIN-LOGIC", "PROCESS-CUSTOMER", "READ-NEXT-RECORD", "HANDLE-ERROR"],
+        "calls": [
+          {
+            "target": "PROCESS-CUSTOMER",
+            "call_type": "perform",
+            "is_external": false,
+            "line_number": 102
+          },
+          {
+            "target": "READ-NEXT-RECORD",
+            "call_type": "perform",
+            "is_external": false,
+            "line_number": 115
+          },
+          {
+            "target": "CUST-VALIDATION",
+            "call_type": "call",
+            "is_external": true,
+            "line_number": 125
+          }
+        ],
+        "io_operations": [
+          {
+            "operation": "READ",
+            "file_name": "CUSTOMER-FILE",
+            "record_name": "CUSTOMER-REC",
+            "line_number": 118,
+            "status_check": true
+          },
+          {
+            "operation": "WRITE",
+            "file_name": "OUTPUT-FILE",
+            "record_name": "OUTPUT-REC",
+            "line_number": 145,
+            "status_check": false
+          }
+        ],
+        "error_handling": [
+          {
+            "pattern_type": "file_status",
+            "description": "FILE STATUS check after READ with EVALUATE for error codes",
+            "line_numbers": [119, 120, 121, 122],
+            "related_symbols": ["WS-STATUS", "CUSTOMER-FILE"]
+          }
+        ]
+      },
+      "evidence": [
+        {
+          "evidence_type": "line_range",
+          "start_line": 100,
+          "end_line": 150,
+          "note": "Main processing loop with file I/O"
+        }
+      ],
+      "open_questions": [
+        {
+          "question": "What validation is performed by CUST-VALIDATION?",
+          "context_needed": "External program source or documentation",
+          "suspected_location": "CUST-VALIDATION copybook or external program"
+        }
+      ],
+      "confidence": 0.85
+    },
+    "data_division": {
+      "summary": "Data division containing working storage section with record layouts and control variables.",
+      "facts": {
+        "symbols_defined": [
+          {
+            "name": "CUSTOMER-REC",
+            "kind": "record",
+            "attributes": {"level": "01"},
+            "line_number": 20
+          },
+          {
+            "name": "CUST-ID",
+            "kind": "field",
+            "attributes": {"level": "05", "picture": "X(10)"},
+            "line_number": 21
+          },
+          {
+            "name": "CUST-NAME",
+            "kind": "field",
+            "attributes": {"level": "05", "picture": "X(30)"},
+            "line_number": 22
+          },
+          {
+            "name": "CUST-BALANCE",
+            "kind": "field",
+            "attributes": {"level": "05", "picture": "S9(9)V99"},
+            "line_number": 23
+          }
+        ],
+        "symbols_used": [],
+        "entrypoints": [],
+        "paragraphs_defined": [],
+        "calls": [],
+        "io_operations": [],
+        "error_handling": []
+      },
+      "evidence": [
+        {
+          "evidence_type": "line_range",
+          "start_line": 15,
+          "end_line": 50,
+          "note": "Working storage section with record definitions"
+        }
+      ],
+      "open_questions": [],
+      "confidence": 0.95
+    },
+    "file_control": {
+      "summary": "File control section defining file assignments and organization.",
+      "facts": {
+        "symbols_defined": [
+          {
+            "name": "CUSTOMER-FILE",
+            "kind": "file",
+            "attributes": {"organization": "indexed", "access": "sequential"},
+            "line_number": 8
+          },
+          {
+            "name": "OUTPUT-FILE",
+            "kind": "file",
+            "attributes": {"organization": "sequential"},
+            "line_number": 12
+          }
+        ],
+        "symbols_used": ["CUSTOMER-FILE", "OUTPUT-FILE"],
+        "entrypoints": [],
+        "paragraphs_defined": [],
+        "calls": [],
+        "io_operations": [],
+        "error_handling": []
+      },
+      "evidence": [
+        {
+          "evidence_type": "line_range",
+          "start_line": 5,
+          "end_line": 15,
+          "note": "File control paragraph"
+        }
+      ],
+      "open_questions": [],
+      "confidence": 0.90
+    },
+    "copybook": {
+      "summary": "Copybook containing customer record layout used across multiple programs.",
+      "facts": {
+        "symbols_defined": [
+          {
+            "name": "CUST-RECORD",
+            "kind": "copybook_record",
+            "attributes": {"level": "01"},
+            "line_number": 1
+          },
+          {
+            "name": "CUST-HEADER",
+            "kind": "group",
+            "attributes": {"level": "05"},
+            "line_number": 2
+          }
+        ],
+        "symbols_used": [],
+        "entrypoints": [],
+        "paragraphs_defined": [],
+        "calls": [],
+        "io_operations": [],
+        "error_handling": []
+      },
+      "evidence": [
+        {
+          "evidence_type": "line_range",
+          "start_line": 1,
+          "end_line": 25,
+          "note": "Copybook record definition"
+        }
+      ],
+      "open_questions": [],
+      "confidence": 0.95
+    },
+    "error_result": {
+      "summary": "Analysis failed due to malformed input",
+      "facts": {
+        "symbols_defined": [],
+        "symbols_used": [],
+        "entrypoints": [],
+        "paragraphs_defined": [],
+        "calls": [],
+        "io_operations": [],
+        "error_handling": []
+      },
+      "evidence": [],
+      "open_questions": [
+        {
+          "question": "Unable to parse code structure",
+          "context_needed": "Valid COBOL source code",
+          "suspected_location": "Input file"
+        }
+      ],
+      "confidence": 0.0
+    }
+  }
+}

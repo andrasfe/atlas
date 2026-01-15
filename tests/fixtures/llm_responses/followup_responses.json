@@ -1,0 +1,152 @@
+{
+  "description": "Mock LLM responses for follow-up investigations",
+  "responses": {
+    "successful_investigation": {
+      "answer": "The CUST-VALIDATION external program returns the following status codes:\n- 0: Validation successful\n- 1: Customer not found in database\n- 2: Customer account is locked\n- 3: Invalid customer type\n- 4: System error (retry recommended)\n\nWhen an error is returned, the calling program should:\n1. Log the error with the return code and customer ID\n2. For codes 1-3: Write to the rejection file and continue\n3. For code 4: Increment retry counter, if < 3 retries, call again\n4. If code 4 persists: Write to error file and terminate batch",
+      "facts": {
+        "symbols_defined": [],
+        "symbols_used": ["CUST-VALIDATION-RC", "WS-RETRY-COUNT", "REJECT-FILE", "ERROR-FILE"],
+        "entrypoints": [],
+        "paragraphs_defined": [],
+        "calls": [
+          {
+            "target": "CUST-VALIDATION",
+            "call_type": "call",
+            "is_external": true,
+            "line_number": 125
+          }
+        ],
+        "io_operations": [
+          {
+            "operation": "WRITE",
+            "file_name": "REJECT-FILE",
+            "record_name": "REJECT-REC",
+            "line_number": 135,
+            "status_check": false
+          }
+        ],
+        "error_handling": [
+          {
+            "pattern_type": "evaluate",
+            "description": "EVALUATE block checking CUST-VALIDATION-RC for different error conditions",
+            "line_numbers": [127, 128, 129, 130, 131, 132, 133],
+            "related_symbols": ["CUST-VALIDATION-RC"]
+          }
+        ]
+      },
+      "evidence": [
+        {
+          "evidence_type": "line_range",
+          "start_line": 125,
+          "end_line": 140,
+          "note": "CUST-VALIDATION call and error handling"
+        },
+        {
+          "evidence_type": "source_ref",
+          "start_line": null,
+          "end_line": null,
+          "note": "CUST-VALIDATION copybook defines return codes"
+        }
+      ],
+      "confidence": 0.90
+    },
+    "partial_answer": {
+      "answer": "Based on the available code, the checkpoint logic writes the current record key to a checkpoint file at configurable intervals (default: every 1000 records). However, the restart logic that reads this checkpoint is not present in the analyzed chunks.\n\nWhat I found:\n- WS-CHECKPOINT-INTERVAL controls checkpoint frequency\n- WRITE-CHECKPOINT paragraph writes current key and count\n- Checkpoint file uses sequential organization\n\nWhat I could not determine:\n- How restart reads the checkpoint\n- Whether partial transactions are rolled back\n- The exact restart procedure",
+      "facts": {
+        "symbols_defined": [
+          {
+            "name": "WS-CHECKPOINT-INTERVAL",
+            "kind": "variable",
+            "attributes": {"level": "01", "picture": "9(5)"},
+            "line_number": 55
+          }
+        ],
+        "symbols_used": ["WS-CHECKPOINT-INTERVAL", "WS-RECORD-COUNT", "WS-CURRENT-KEY"],
+        "entrypoints": [],
+        "paragraphs_defined": ["WRITE-CHECKPOINT"],
+        "calls": [],
+        "io_operations": [
+          {
+            "operation": "WRITE",
+            "file_name": "CHECKPOINT-FILE",
+            "record_name": "CHECKPOINT-REC",
+            "line_number": 180,
+            "status_check": true
+          }
+        ],
+        "error_handling": []
+      },
+      "evidence": [
+        {
+          "evidence_type": "line_range",
+          "start_line": 175,
+          "end_line": 190,
+          "note": "WRITE-CHECKPOINT paragraph"
+        }
+      ],
+      "confidence": 0.60
+    },
+    "unable_to_answer": {
+      "answer": "I was unable to find sufficient information to answer this question. The CUSTDB-API external program is referenced in the code but its implementation details are not available in the analyzed chunks. This appears to be an external dependency that requires separate documentation.",
+      "facts": {
+        "symbols_defined": [],
+        "symbols_used": ["CUSTDB-API"],
+        "entrypoints": [],
+        "paragraphs_defined": [],
+        "calls": [
+          {
+            "target": "CUSTDB-API",
+            "call_type": "call",
+            "is_external": true,
+            "line_number": 200
+          }
+        ],
+        "io_operations": [],
+        "error_handling": []
+      },
+      "evidence": [
+        {
+          "evidence_type": "line_range",
+          "start_line": 198,
+          "end_line": 205,
+          "note": "CALL to CUSTDB-API - implementation not available"
+        }
+      ],
+      "confidence": 0.20
+    },
+    "cross_cutting_investigation": {
+      "answer": "Analysis across all procedure division chunks reveals the following error handling patterns:\n\n1. FILE STATUS Checks:\n   - CUSTOMER-FILE: Checked after OPEN, READ, CLOSE\n   - OUTPUT-FILE: Checked after OPEN only (gap identified)\n   - REJECT-FILE: Not checked (potential issue)\n\n2. External Call Error Handling:\n   - CUST-VALIDATION: Return code checked with EVALUATE\n   - CUSTDB-API: No error handling found (potential issue)\n\n3. General Patterns:\n   - Most errors result in logging and continuation\n   - Critical errors (file open failures) cause immediate termination\n   - No transaction rollback mechanism identified",
+      "facts": {
+        "symbols_defined": [],
+        "symbols_used": ["WS-FILE-STATUS", "CUSTOMER-FILE", "OUTPUT-FILE", "REJECT-FILE"],
+        "entrypoints": [],
+        "paragraphs_defined": [],
+        "calls": [],
+        "io_operations": [],
+        "error_handling": [
+          {
+            "pattern_type": "file_status",
+            "description": "FILE STATUS checked for CUSTOMER-FILE operations",
+            "line_numbers": [105, 120, 200],
+            "related_symbols": ["WS-FILE-STATUS", "CUSTOMER-FILE"]
+          },
+          {
+            "pattern_type": "file_status",
+            "description": "FILE STATUS checked for OUTPUT-FILE OPEN only",
+            "line_numbers": [110],
+            "related_symbols": ["WS-FILE-STATUS", "OUTPUT-FILE"]
+          }
+        ]
+      },
+      "evidence": [
+        {
+          "evidence_type": "line_range",
+          "start_line": 100,
+          "end_line": 210,
+          "note": "Error handling analysis across procedure division"
+        }
+      ],
+      "confidence": 0.85
+    }
+  }
+}
