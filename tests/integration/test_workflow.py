@@ -5,6 +5,9 @@ challenge, and completion.
 """
 
 import pytest
+
+# Mark all tests in this module as integration tests
+pytestmark = pytest.mark.integration
 import json
 from datetime import datetime, timezone
 

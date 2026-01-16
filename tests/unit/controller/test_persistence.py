@@ -1,6 +1,9 @@
 """Tests for job state persistence and recovery."""
 
 import pytest
+
+# Mark all tests in this module as unit tests
+pytestmark = pytest.mark.unit
 from datetime import datetime, timezone
 
 from atlas.controller.persistence import (

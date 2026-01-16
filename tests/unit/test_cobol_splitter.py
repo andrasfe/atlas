@@ -1,6 +1,9 @@
 """Unit tests for the COBOL-aware chunk splitter."""
 
 import pytest
+
+# Mark all tests in this module as unit tests
+pytestmark = pytest.mark.unit
 from pathlib import Path
 
 from atlas.splitter.cobol import COBOLSplitter, SemanticBoundary, COBOLStructure

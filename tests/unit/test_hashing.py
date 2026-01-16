@@ -2,6 +2,9 @@
 
 import pytest
 
+# Mark all tests in this module as unit tests
+pytestmark = pytest.mark.unit
+
 from atlas.utils.hashing import (
     compute_content_hash,
     compute_idempotency_key,

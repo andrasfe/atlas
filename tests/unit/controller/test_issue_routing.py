@@ -13,6 +13,9 @@ Also tests scope size constraints from spec section 9.3:
 
 import pytest
 
+# Mark all tests in this module as unit tests
+pytestmark = pytest.mark.unit
+
 from atlas.controller.reconciler import ReconcileController
 from atlas.controller.base import ControllerConfig
 from atlas.models.artifact import ArtifactRef

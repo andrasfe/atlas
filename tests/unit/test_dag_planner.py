@@ -10,6 +10,9 @@ These tests verify the DAGPlanner implementation including:
 """
 
 import pytest
+
+# Mark all tests in this module as unit tests
+pytestmark = pytest.mark.unit
 from unittest.mock import MagicMock, patch
 
 from atlas.planner.dag_planner import DAGPlanner, MergeGroup
@@ -32,6 +35,11 @@ class MockSplitter(Splitter):
 
     def __init__(self, chunks: list[ChunkSpec] | None = None):
         self._chunks = chunks or []
+
+    @classmethod
+    def get_artifact_types(cls) -> list[str]:
+        """Return mock artifact types."""
+        return ["mock"]
 
     def split(
         self,

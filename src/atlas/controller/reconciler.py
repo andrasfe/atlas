@@ -28,6 +28,7 @@ from atlas.models.work_item import (
     DocChallengePayload,
     DocFollowupPayload,
     DocPatchMergePayload,
+    DocFinalizePayload,
     ChunkLocator,
 )
 
@@ -40,13 +41,14 @@ class ReconcileController(Controller):
     Implements the reconciliation loop that observes state, computes
     missing work, creates it, and gates/advances work items.
 
-    The controller operates through six phases:
+    The controller operates through seven phases:
         A. Request & Plan - Create manifest with chunks and merge DAG
         B. Chunk Analysis - Scribes analyze chunks
         C. Hierarchical Merge - Aggregators merge results bottom-up
         D. Challenger Review - Challenger reviews and raises issues
         E. Follow-up Dispatch - Controller routes issues to follow-ups
         F. Re-challenge Loop - Optional re-challenge until acceptance
+        G. Finalize - Produce final deliverables and mark job complete (spec 6.8)
 
     Design Principles:
         - Idempotent: Safe to re-run after crashes without duplicate work
@@ -150,6 +152,13 @@ class ReconcileController(Controller):
             elif phase == "rechallenge":
                 # Phase F: Re-run challenger on updated documentation
                 created = await self._execute_phase_f(job_id, manifest, work_items_by_type)
+                result.work_items_created = created
+
+            elif phase == "finalize":
+                # Phase G: Produce final deliverables and mark job complete
+                created = await self._execute_phase_finalize(
+                    job_id, manifest, work_items_by_type
+                )
                 result.work_items_created = created
 
             elif phase == "complete":
@@ -527,6 +536,7 @@ class ReconcileController(Controller):
         - followup: Follow-up work dispatched and in progress (Phase E)
         - patch: Patch merge needed or in progress (Phase E continued)
         - rechallenge: Re-challenge needed after patch merge (Phase F)
+        - finalize: Produce final deliverables (Phase G, spec 6.8)
         - complete: Job finished successfully
 
         Args:
@@ -544,6 +554,7 @@ class ReconcileController(Controller):
         challenges = work_items_by_type.get(WorkItemType.DOC_CHALLENGE, [])
         followups = work_items_by_type.get(WorkItemType.DOC_FOLLOWUP, [])
         patch_merges = work_items_by_type.get(WorkItemType.DOC_PATCH_MERGE, [])
+        finalizes = work_items_by_type.get(WorkItemType.DOC_FINALIZE, [])
 
         # Phase A (plan): If no work items exist, need to create them
         if not chunks and not merges:
@@ -620,12 +631,18 @@ class ReconcileController(Controller):
                     return "challenge"
 
         # If no follow-ups were created for this challenge, check why
-        # Either no actionable issues or job should complete
+        # Either no actionable issues or job should proceed to finalize
         elif latest_challenge.status == WorkItemStatus.DONE:
-            # Challenge done but no follow-ups - either complete or need to check issues
-            # The reconcile loop will create follow-ups if needed
-            # For now, assume complete if no follow-ups and challenge is done
+            # Challenge done but no follow-ups - proceed to finalize
             pass
+
+        # Phase G (finalize): Check if finalize work item exists and is complete
+        if not finalizes:
+            return "finalize"
+
+        latest_finalize = finalizes[0]  # Should only be one
+        if latest_finalize.status != WorkItemStatus.DONE:
+            return "finalize"
 
         # Job is complete if we've reached here
         return "complete"
@@ -1200,6 +1217,149 @@ class ReconcileController(Controller):
         )
 
         return await self._execute_phase_d(job_id, manifest, work_items_by_type)
+
+    async def _execute_phase_finalize(
+        self,
+        job_id: str,
+        manifest: Manifest,
+        work_items_by_type: dict[WorkItemType, list[WorkItem]],
+    ) -> int:
+        """Execute Phase G (Finalize): Create finalize work item.
+
+        Per spec section 6.8, the finalize phase:
+        - Produces final deliverables (Markdown, optional PDF)
+        - Generates trace report (chunk to doc section mapping)
+        - Creates summary statistics
+        - Marks DOC_REQUEST as fully complete
+
+        Args:
+            job_id: The job identifier.
+            manifest: The workflow manifest.
+            work_items_by_type: Existing work items by type.
+
+        Returns:
+            Number of work items created (0 or 1).
+        """
+        finalizes = work_items_by_type.get(WorkItemType.DOC_FINALIZE, [])
+
+        # Check if finalize already exists
+        if finalizes:
+            return 0
+
+        # Check idempotency
+        idem_key = self.compute_idempotency_key(
+            job_id,
+            WorkItemType.DOC_FINALIZE.value,
+            manifest.artifact_ref.artifact_version,
+            "final",
+        )
+
+        existing = await self.ticket_system.find_by_idempotency_key(idem_key)
+        if existing:
+            return 0
+
+        if manifest.artifacts is None:
+            logger.error(f"No artifacts config for job {job_id}")
+            return 0
+
+        # Determine which documentation to finalize
+        # If there were patch merges, use the latest patched doc
+        # Otherwise use the original doc from root merge
+        patch_merges = work_items_by_type.get(WorkItemType.DOC_PATCH_MERGE, [])
+        challenges = work_items_by_type.get(WorkItemType.DOC_CHALLENGE, [])
+
+        if patch_merges:
+            # Use the most recent patch merge output
+            completed_patches = [
+                p for p in patch_merges if p.status == WorkItemStatus.DONE
+            ]
+            if completed_patches:
+                latest_patch = max(completed_patches, key=lambda p: p.cycle_number)
+                if isinstance(latest_patch.payload, DocPatchMergePayload):
+                    doc_uri = latest_patch.payload.output_doc_uri
+                    doc_model_uri = latest_patch.payload.output_doc_model_uri
+                else:
+                    doc_uri = self.artifact_store.generate_uri(
+                        manifest.artifacts.base_uri,
+                        manifest.artifacts.doc_path,
+                    )
+                    doc_model_uri = self.artifact_store.generate_uri(
+                        manifest.artifacts.base_uri,
+                        manifest.artifacts.doc_model_path,
+                    )
+            else:
+                doc_uri = self.artifact_store.generate_uri(
+                    manifest.artifacts.base_uri,
+                    manifest.artifacts.doc_path,
+                )
+                doc_model_uri = self.artifact_store.generate_uri(
+                    manifest.artifacts.base_uri,
+                    manifest.artifacts.doc_model_path,
+                )
+        else:
+            # Use original documentation from root merge
+            doc_uri = self.artifact_store.generate_uri(
+                manifest.artifacts.base_uri,
+                manifest.artifacts.doc_path,
+            )
+            doc_model_uri = self.artifact_store.generate_uri(
+                manifest.artifacts.base_uri,
+                manifest.artifacts.doc_model_path,
+            )
+
+        # Determine output URIs for final deliverables
+        output_doc_uri = self.artifact_store.generate_uri(
+            manifest.artifacts.base_uri,
+            "final/documentation.md",
+        )
+        output_trace_uri = self.artifact_store.generate_uri(
+            manifest.artifacts.base_uri,
+            "final/trace_report.json",
+        )
+        output_summary_uri = self.artifact_store.generate_uri(
+            manifest.artifacts.base_uri,
+            "final/summary.json",
+        )
+
+        # Optional PDF output
+        output_pdf_uri = None
+        generate_pdf = getattr(manifest.review_policy, 'generate_pdf', False)
+        if generate_pdf:
+            output_pdf_uri = self.artifact_store.generate_uri(
+                manifest.artifacts.base_uri,
+                "final/documentation.pdf",
+            )
+
+        # Create finalize payload
+        payload = DocFinalizePayload(
+            job_id=job_id,
+            artifact_ref=manifest.artifact_ref,
+            manifest_uri=self._get_manifest_uri(job_id),
+            doc_uri=doc_uri,
+            doc_model_uri=doc_model_uri,
+            output_doc_uri=output_doc_uri,
+            output_pdf_uri=output_pdf_uri,
+            output_trace_uri=output_trace_uri,
+            output_summary_uri=output_summary_uri,
+            generate_pdf=generate_pdf,
+            cleanup_intermediates=getattr(
+                manifest.review_policy, 'cleanup_intermediates', False
+            ),
+        )
+
+        # Create work item
+        work_item = WorkItem(
+            work_id=f"{job_id}-finalize",
+            work_type=WorkItemType.DOC_FINALIZE,
+            status=WorkItemStatus.READY,
+            payload=payload,
+            idempotency_key=idem_key,
+            created_at=datetime.utcnow().isoformat(),
+        )
+
+        await self.ticket_system.create_work_item(work_item)
+        logger.info(f"Phase G: Created finalize work item for job {job_id}")
+        return 1
 
     async def _create_chunk_work_item(
         self,

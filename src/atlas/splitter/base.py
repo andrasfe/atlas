@@ -8,10 +8,16 @@ Key Requirements:
 - Deterministic: Same source + profile = same chunk boundaries
 - Semantic awareness: Prefer division/section/paragraph boundaries
 - Context-bounded: Chunks must fit within token budget
+
+The splitter system supports a plugin architecture:
+- Each splitter declares which artifact types it handles via get_artifact_types()
+- The SplitterRegistry maps artifact types to appropriate splitters
+- Unknown types fall back to LineBasedSplitter for simple line-count chunking
 """
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from typing import ClassVar
 
 from atlas.models.manifest import ChunkSpec, SplitterProfile
 from atlas.models.enums import ChunkKind
@@ -44,26 +50,47 @@ class Splitter(ABC):
     - Respect semantic boundaries where possible
     - Ensure chunks fit within the configured context budget
     - Generate stable chunk IDs
+    - Declare which artifact types they handle via get_artifact_types()
 
     Design Principle:
         For the same source snapshot + splitter profile, chunk boundaries
         and chunk_ids MUST be stable (deterministic chunking).
 
+    Plugin Architecture:
+        Splitters register themselves with the SplitterRegistry by declaring
+        which artifact types they handle. The registry uses this to route
+        splitting requests to the appropriate implementation.
+
     Example Implementation:
         >>> class COBOLSplitter(Splitter):
+        ...     @classmethod
+        ...     def get_artifact_types(cls) -> list[str]:
+        ...         return ["cobol", "copybook"]
+        ...
         ...     def split(self, source: str, profile: SplitterProfile) -> SplitResult:
         ...         # Parse COBOL structure
         ...         divisions = self._parse_divisions(source)
         ...         # Split at semantic boundaries
         ...         chunks = self._create_chunks(divisions, profile)
         ...         return SplitResult(chunks=chunks)
-
-    TODO: Implement concrete splitters for:
-        - COBOL programs (semantic + line-based)
-        - COBOL copybooks
-        - JCL scripts
-        - Generic line-based splitting
     """
+
+    @classmethod
+    @abstractmethod
+    def get_artifact_types(cls) -> list[str]:
+        """Return the artifact types this splitter handles.
+
+        Each splitter declares which artifact types it can process.
+        The SplitterRegistry uses this to route splitting requests.
+
+        Returns:
+            List of artifact type strings (e.g., ["cobol", "copybook"]).
+
+        Example:
+            >>> COBOLSplitter.get_artifact_types()
+            ['cobol', 'copybook']
+        """
+        pass
 
     @abstractmethod
     def split(
@@ -81,8 +108,6 @@ class Splitter(ABC):
 
         Returns:
             SplitResult with chunk specifications.
-
-        TODO: Implement deterministic splitting logic.
         """
         pass
 
@@ -100,9 +125,8 @@ class Splitter(ABC):
 
         Note:
             This is an estimate. Actual token count depends on
-            the specific LLM tokenizer.
-
-        TODO: Implement token estimation (approx 4 chars per token).
+            the specific LLM tokenizer. A common heuristic is
+            approximately 4 characters per token.
         """
         pass
 
@@ -120,8 +144,7 @@ class Splitter(ABC):
 
         Returns:
             List of (line_number, name, chunk_kind) tuples.
-
-        TODO: Implement language-specific boundary detection.
+            For splitters without semantic awareness, return an empty list.
         """
         pass
 

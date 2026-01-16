@@ -2,6 +2,9 @@
 
 import json
 import pytest
+
+# Mark all tests in this module as unit tests
+pytestmark = pytest.mark.unit
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from atlas.models.artifact import ArtifactRef
@@ -17,6 +20,7 @@ from atlas.models.work_item import (
     DocMergePayload,
     DocChallengePayload,
     DocFollowupPayload,
+    DocFinalizePayload,
     ChunkLocator,
 )
 from atlas.models.results import (
@@ -30,11 +34,15 @@ from atlas.models.results import (
     Section,
     Issue,
     ResolutionPlan,
+    FinalizeResult,
+    TraceReport,
+    JobStatistics,
 )
 from atlas.workers.scribe_impl import ScribeWorker
 from atlas.workers.aggregator_impl import AggregatorWorker
 from atlas.workers.challenger_impl import ChallengerWorker
 from atlas.workers.followup_impl import FollowupWorker
+from atlas.workers.finalize_impl import FinalizeWorker
 
 
 @pytest.fixture
@@ -94,6 +102,19 @@ def followup_worker(
     """Create FollowupWorker with mocks."""
     return FollowupWorker(
         worker_id="followup-001",
+        ticket_system=mock_ticket_system,
+        artifact_store=mock_artifact_store,
+        llm=mock_llm,
+    )
+
+
+@pytest.fixture
+def finalize_worker(
+    mock_ticket_system, mock_artifact_store, mock_llm
+) -> FinalizeWorker:
+    """Create FinalizeWorker with mocks."""
+    return FinalizeWorker(
+        worker_id="finalize-001",
         ticket_system=mock_ticket_system,
         artifact_store=mock_artifact_store,
         llm=mock_llm,
@@ -1219,3 +1240,476 @@ class TestWithLLMFixtures:
         # Verify fixture issues were parsed
         assert len(result.issues) == 2
         assert any(i.severity == IssueSeverity.MAJOR for i in result.issues)
+
+
+# ============================================================================
+# Finalize Worker Tests
+# ============================================================================
+
+
+class TestFinalizeWorker:
+    """Tests for FinalizeWorker."""
+
+    def test_supported_work_types(self, finalize_worker: FinalizeWorker) -> None:
+        """Test finalize worker supports correct work types."""
+        assert WorkItemType.DOC_FINALIZE in finalize_worker.supported_work_types
+        assert len(finalize_worker.supported_work_types) == 1
+
+    @pytest.mark.asyncio
+    async def test_process_finalize(
+        self,
+        finalize_worker: FinalizeWorker,
+        artifact_ref: ArtifactRef,
+        mock_artifact_store,
+        mock_ticket_system,
+    ) -> None:
+        """Test processing a finalize work item."""
+        # Store documentation
+        doc_uri = "s3://bucket/doc.md"
+        await mock_artifact_store.write_text(doc_uri, "# Test Documentation\n\nContent here.")
+
+        # Store documentation model
+        doc_model_uri = "s3://bucket/doc_model.json"
+        doc_model = DocumentationModel(
+            doc_uri=doc_uri,
+            sections=[
+                Section(
+                    section_id="section-1",
+                    title="Overview",
+                    source_refs=["chunk_001"],
+                ),
+            ],
+            index=DocIndex(),
+            metadata={"artifact_id": "TEST.cbl", "job_id": "job-001"},
+        )
+        await mock_artifact_store.write_json(doc_model_uri, doc_model.model_dump())
+
+        # Store chunk result
+        chunk_result = ChunkResult(
+            job_id="job-001",
+            artifact_id="TEST001.cbl",
+            artifact_version="abc123",
+            chunk_id="chunk_001",
+            chunk_kind="procedure_part",
+            chunk_locator={"start_line": 1, "end_line": 100},
+            summary="Main logic",
+            facts=ChunkFacts(),
+            evidence=[],
+            open_questions=[],
+            confidence=0.9,
+        )
+
+        # Create chunk work item
+        chunk_item = WorkItem(
+            work_id="job-001-chunk-chunk_001",
+            work_type=WorkItemType.DOC_CHUNK,
+            status=WorkItemStatus.DONE,
+            payload=DocChunkPayload(
+                job_id="job-001",
+                artifact_ref=artifact_ref,
+                manifest_uri="s3://bucket/manifest.json",
+                chunk_id="chunk_001",
+                chunk_locator=ChunkLocator(start_line=1, end_line=100),
+                result_uri="s3://bucket/chunks/chunk_001.json",
+            ),
+        )
+        await mock_ticket_system.create_work_item(chunk_item)
+        await mock_artifact_store.write_json(
+            "s3://bucket/chunks/chunk_001.json",
+            chunk_result.model_dump(),
+        )
+
+        # Create challenge work item (done, no issues)
+        challenge_item = WorkItem(
+            work_id="job-001-challenge-cycle1",
+            work_type=WorkItemType.DOC_CHALLENGE,
+            status=WorkItemStatus.DONE,
+            payload=DocChallengePayload(
+                job_id="job-001",
+                artifact_ref=artifact_ref,
+                manifest_uri="s3://bucket/manifest.json",
+                doc_uri=doc_uri,
+                doc_model_uri=doc_model_uri,
+                challenge_profile="completeness",
+                output_uri="s3://bucket/challenges/challenge_1.json",
+            ),
+            cycle_number=1,
+        )
+        await mock_ticket_system.create_work_item(challenge_item)
+
+        # Store challenge result
+        challenge_result = ChallengeResult(
+            job_id="job-001",
+            artifact_id="TEST001.cbl",
+            artifact_version="abc123",
+            doc_uri=doc_uri,
+            challenge_profile="completeness",
+            issues=[],
+            summary="Documentation is complete",
+            recommendations=[],
+        )
+        await mock_artifact_store.write_json(
+            "s3://bucket/challenges/challenge_1.json",
+            challenge_result.model_dump(),
+        )
+
+        # Create finalize payload
+        payload = DocFinalizePayload(
+            job_id="job-001",
+            artifact_ref=artifact_ref,
+            manifest_uri="s3://bucket/manifest.json",
+            doc_uri=doc_uri,
+            doc_model_uri=doc_model_uri,
+            output_doc_uri="s3://bucket/final/documentation.md",
+            output_trace_uri="s3://bucket/final/trace.json",
+            output_summary_uri="s3://bucket/final/summary.json",
+            generate_pdf=False,
+            cleanup_intermediates=False,
+        )
+
+        work_item = WorkItem(
+            work_id="job-001-finalize",
+            work_type=WorkItemType.DOC_FINALIZE,
+            status=WorkItemStatus.IN_PROGRESS,
+            payload=payload,
+        )
+
+        result = await finalize_worker.process(work_item)
+
+        assert isinstance(result, FinalizeResult)
+        assert result.job_id == "job-001"
+        assert result.status == "accepted"
+        assert result.doc_uri == "s3://bucket/final/documentation.md"
+        assert result.trace_uri == "s3://bucket/final/trace.json"
+        assert result.summary_uri == "s3://bucket/final/summary.json"
+        assert result.pdf_uri is None  # PDF not requested
+
+    @pytest.mark.asyncio
+    async def test_generate_trace_report(
+        self,
+        finalize_worker: FinalizeWorker,
+        artifact_ref: ArtifactRef,
+        mock_artifact_store,
+        mock_ticket_system,
+    ) -> None:
+        """Test trace report generation."""
+        # Set up documentation model
+        doc_model = DocumentationModel(
+            doc_uri="s3://bucket/doc.md",
+            sections=[
+                Section(
+                    section_id="sec-1",
+                    title="Overview",
+                    source_refs=["chunk_001", "chunk_002"],
+                ),
+                Section(
+                    section_id="sec-2",
+                    title="Details",
+                    source_refs=["chunk_003"],
+                ),
+            ],
+            index=DocIndex(),
+        )
+
+        # Create chunk results
+        chunk_results = [
+            ChunkResult(
+                job_id="job-001",
+                artifact_id="TEST001.cbl",
+                artifact_version="abc123",
+                chunk_id="chunk_001",
+                chunk_kind="procedure_part",
+                chunk_locator={"start_line": 1, "end_line": 50},
+                summary="Main logic",
+                facts=ChunkFacts(),
+                evidence=[],
+                open_questions=[],
+                confidence=0.9,
+            ),
+            ChunkResult(
+                job_id="job-001",
+                artifact_id="TEST001.cbl",
+                artifact_version="abc123",
+                chunk_id="chunk_002",
+                chunk_kind="data_section",
+                chunk_locator={"start_line": 51, "end_line": 100},
+                summary="Data definitions",
+                facts=ChunkFacts(),
+                evidence=[],
+                open_questions=[{"question": "What is WS-VAR?"}],
+                confidence=0.8,
+            ),
+        ]
+
+        # Set up job data
+        job_data = {
+            "chunks": [
+                WorkItem(
+                    work_id="chunk_001",
+                    work_type=WorkItemType.DOC_CHUNK,
+                    status=WorkItemStatus.DONE,
+                    payload=DocChunkPayload(
+                        job_id="job-001",
+                        artifact_ref=artifact_ref,
+                        manifest_uri="uri",
+                        chunk_id="chunk_001",
+                        chunk_locator=ChunkLocator(start_line=1, end_line=50),
+                        result_uri="s3://bucket/chunk_001.json",
+                    ),
+                ),
+            ],
+            "chunk_results": chunk_results,
+            "challenges": [],
+            "challenge_results": [],
+            "followups": [],
+            "patch_merges": [],
+            "merges": [],
+        }
+
+        payload = DocFinalizePayload(
+            job_id="job-001",
+            artifact_ref=artifact_ref,
+            manifest_uri="s3://bucket/manifest.json",
+            doc_uri="s3://bucket/doc.md",
+            doc_model_uri="s3://bucket/doc_model.json",
+            output_doc_uri="s3://bucket/final/doc.md",
+            output_trace_uri="s3://bucket/final/trace.json",
+            output_summary_uri="s3://bucket/final/summary.json",
+        )
+
+        trace = await finalize_worker._generate_trace_report(
+            payload, doc_model, job_data
+        )
+
+        assert isinstance(trace, TraceReport)
+        assert trace.job_id == "job-001"
+        assert len(trace.section_traces) == 2
+        assert trace.section_traces[0].section_id == "sec-1"
+        assert len(trace.section_traces[0].chunk_contributions) == 2
+
+    def test_generate_statistics(
+        self,
+        finalize_worker: FinalizeWorker,
+        artifact_ref: ArtifactRef,
+    ) -> None:
+        """Test statistics generation."""
+        payload = DocFinalizePayload(
+            job_id="job-001",
+            artifact_ref=artifact_ref,
+            manifest_uri="s3://bucket/manifest.json",
+            doc_uri="s3://bucket/doc.md",
+            doc_model_uri="s3://bucket/doc_model.json",
+            output_doc_uri="s3://bucket/final/doc.md",
+            output_trace_uri="s3://bucket/final/trace.json",
+            output_summary_uri="s3://bucket/final/summary.json",
+        )
+
+        job_data = {
+            "chunks": [MagicMock()] * 5,
+            "chunk_results": [
+                MagicMock(confidence=0.9, chunk_locator={"start_line": 1, "end_line": 50}),
+                MagicMock(confidence=0.8, chunk_locator={"start_line": 51, "end_line": 100}),
+            ],
+            "challenges": [MagicMock(cycle_number=1)],
+            "challenge_results": [MagicMock(issues=[])],
+            "followups": [],
+            "patch_merges": [],
+            "merges": [MagicMock()] * 3,
+        }
+
+        trace_report = TraceReport(
+            job_id="job-001",
+            artifact_id="TEST.cbl",
+            artifact_version="abc123",
+            total_chunks=5,
+            total_sections=2,
+            total_issues_raised=0,
+            total_issues_resolved=0,
+            final_cycle=1,
+        )
+
+        stats = finalize_worker._generate_statistics(payload, job_data, trace_report)
+
+        assert isinstance(stats, JobStatistics)
+        assert stats.job_id == "job-001"
+        assert stats.total_chunks == 5
+        assert stats.total_merges == 3
+        assert stats.challenger_cycles == 1
+        assert stats.average_confidence == 0.85
+        assert stats.status == "accepted"
+
+    def test_generate_final_doc(
+        self,
+        finalize_worker: FinalizeWorker,
+    ) -> None:
+        """Test final Markdown document generation."""
+        doc_content = "# Documentation\n\nThis is the content."
+        doc_model = DocumentationModel(
+            doc_uri="s3://bucket/doc.md",
+            sections=[
+                Section(section_id="s1", title="Overview"),
+                Section(section_id="s2", title="Details"),
+            ],
+            index=DocIndex(),
+        )
+        statistics = JobStatistics(
+            job_id="job-001",
+            artifact_id="TEST.cbl",
+            status="accepted",
+            total_chunks=10,
+            total_merges=5,
+            challenger_cycles=2,
+            issues_raised=3,
+            issues_resolved=3,
+            average_confidence=0.85,
+            total_lines_analyzed=500,
+        )
+
+        result = finalize_worker._generate_final_doc(
+            doc_content, doc_model, statistics
+        )
+
+        # Check header metadata
+        assert "artifact: TEST.cbl" in result
+        assert "status: accepted" in result
+        assert "confidence: 85.0%" in result
+
+        # Check footer summary
+        assert "Total Sections" in result
+        assert "Source Lines Analyzed**: 500" in result
+        assert "Issues Raised**: 3" in result
+        assert "Issues Resolved**: 3" in result
+        assert "Atlas Documentation System" in result
+
+        # Check original content preserved
+        assert "# Documentation" in result
+        assert "This is the content." in result
+
+    @pytest.mark.asyncio
+    async def test_output_exists_check(
+        self,
+        finalize_worker: FinalizeWorker,
+        artifact_ref: ArtifactRef,
+        mock_artifact_store,
+    ) -> None:
+        """Test idempotency check for existing outputs."""
+        # Store all output artifacts
+        await mock_artifact_store.write_text(
+            "s3://bucket/final/doc.md", "Final doc"
+        )
+        await mock_artifact_store.write_json(
+            "s3://bucket/final/trace.json", {"job_id": "job-001"}
+        )
+        await mock_artifact_store.write_json(
+            "s3://bucket/final/summary.json", {"job_id": "job-001"}
+        )
+
+        payload = DocFinalizePayload(
+            job_id="job-001",
+            artifact_ref=artifact_ref,
+            manifest_uri="s3://bucket/manifest.json",
+            doc_uri="s3://bucket/doc.md",
+            doc_model_uri="s3://bucket/doc_model.json",
+            output_doc_uri="s3://bucket/final/doc.md",
+            output_trace_uri="s3://bucket/final/trace.json",
+            output_summary_uri="s3://bucket/final/summary.json",
+        )
+
+        work_item = WorkItem(
+            work_id="job-001-finalize",
+            work_type=WorkItemType.DOC_FINALIZE,
+            status=WorkItemStatus.IN_PROGRESS,
+            payload=payload,
+        )
+
+        exists = await finalize_worker._output_exists(work_item)
+        assert exists is True
+
+    @pytest.mark.asyncio
+    async def test_output_not_exists_partial(
+        self,
+        finalize_worker: FinalizeWorker,
+        artifact_ref: ArtifactRef,
+        mock_artifact_store,
+    ) -> None:
+        """Test idempotency check when outputs are partial."""
+        # Only store some outputs
+        await mock_artifact_store.write_text(
+            "s3://bucket/final/doc.md", "Final doc"
+        )
+        # Missing trace and summary
+
+        payload = DocFinalizePayload(
+            job_id="job-001",
+            artifact_ref=artifact_ref,
+            manifest_uri="s3://bucket/manifest.json",
+            doc_uri="s3://bucket/doc.md",
+            doc_model_uri="s3://bucket/doc_model.json",
+            output_doc_uri="s3://bucket/final/doc.md",
+            output_trace_uri="s3://bucket/final/trace.json",
+            output_summary_uri="s3://bucket/final/summary.json",
+        )
+
+        work_item = WorkItem(
+            work_id="job-001-finalize",
+            work_type=WorkItemType.DOC_FINALIZE,
+            status=WorkItemStatus.IN_PROGRESS,
+            payload=payload,
+        )
+
+        exists = await finalize_worker._output_exists(work_item)
+        assert exists is False
+
+
+class TestFinalizeWorkerStatuses:
+    """Tests for finalize status determination."""
+
+    def test_status_completed_with_blockers(
+        self,
+        finalize_worker: FinalizeWorker,
+        artifact_ref: ArtifactRef,
+    ) -> None:
+        """Test status when blockers remain."""
+        payload = DocFinalizePayload(
+            job_id="job-001",
+            artifact_ref=artifact_ref,
+            manifest_uri="s3://bucket/manifest.json",
+            doc_uri="s3://bucket/doc.md",
+            doc_model_uri="s3://bucket/doc_model.json",
+            output_doc_uri="s3://bucket/final/doc.md",
+            output_trace_uri="s3://bucket/final/trace.json",
+            output_summary_uri="s3://bucket/final/summary.json",
+        )
+
+        # Mock blocker issues
+        blocker_issue = Issue(
+            issue_id="blocker-001",
+            severity=IssueSeverity.BLOCKER,
+            question="Critical issue",
+        )
+        challenge_result = MagicMock()
+        challenge_result.issues = [blocker_issue]
+
+        job_data = {
+            "chunks": [],
+            "chunk_results": [],
+            "challenges": [],
+            "challenge_results": [challenge_result],
+            "followups": [],  # No follow-ups to resolve the blocker
+            "patch_merges": [],
+            "merges": [],
+        }
+
+        trace_report = TraceReport(
+            job_id="job-001",
+            artifact_id="TEST.cbl",
+            artifact_version="abc123",
+            total_issues_raised=1,
+            total_issues_resolved=0,
+            final_cycle=1,
+        )
+
+        stats = finalize_worker._generate_statistics(payload, job_data, trace_report)
+
+        assert stats.blockers_remaining == 1
+        assert stats.status == "completed_with_blockers"

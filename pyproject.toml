@@ -32,6 +32,7 @@ dev = [
     "pytest-cov>=4.0",
     "mypy>=1.8",
     "ruff>=0.2",
+    "flake8>=7.0",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -40,7 +41,17 @@ packages = ["src/atlas"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-addopts = "-v --cov=atlas --cov-report=term-missing"
+asyncio_default_fixture_loop_scope = "function"
+addopts = "-v --cov=atlas --cov-report=term-missing --cov-report=html --cov-report=xml"
+markers = [
+    "unit: Unit tests (fast, isolated, no external dependencies)",
+    "integration: Integration tests (may involve multiple components)",
+    "slow: Slow-running tests (may take significant time to complete)",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
+junit_family = "xunit2"
 
 [tool.mypy]
 python_version = "3.10"
@@ -59,3 +70,32 @@ ignore = []
 
 [tool.ruff.lint.isort]
 known-first-party = ["atlas"]
+
+# Coverage configuration
+[tool.coverage.run]
+source = ["atlas"]
+branch = true
+omit = [
+    "*/tests/*",
+    "*/__init__.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "@abstractmethod",
+]
+fail_under = 90
+show_missing = true
+precision = 2
+
+[tool.coverage.html]
+directory = "htmlcov"
+
+[tool.coverage.xml]
+output = "coverage.xml"

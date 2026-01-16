@@ -13,6 +13,9 @@ Test Coverage:
 """
 
 import pytest
+
+# Mark all tests in this module as integration tests
+pytestmark = [pytest.mark.integration, pytest.mark.slow]
 import asyncio
 import json
 from pathlib import Path

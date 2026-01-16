@@ -10,6 +10,9 @@ Tests cover:
 
 import asyncio
 import pytest
+
+# Mark all tests in this module as unit tests
+pytestmark = pytest.mark.unit
 from datetime import datetime, timezone, timedelta
 from unittest.mock import AsyncMock, MagicMock
 

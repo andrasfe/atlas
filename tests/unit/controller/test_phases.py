@@ -8,6 +8,9 @@ Tests the phase-specific logic in the ReconcileController:
 """
 
 import pytest
+
+# Mark all tests in this module as unit tests
+pytestmark = pytest.mark.unit
 from unittest.mock import AsyncMock, patch
 import json
 
@@ -36,6 +39,7 @@ from atlas.models.work_item import (
     DocChallengePayload,
     DocFollowupPayload,
     DocPatchMergePayload,
+    DocFinalizePayload,
     ChunkLocator,
 )
 from atlas.models.results import (
@@ -895,12 +899,12 @@ class TestPhaseDetermination:
         phase = controller._determine_phase(hierarchical_manifest, work_items_by_type)
         assert phase == "challenge"
 
-    def test_determine_phase_complete(
+    def test_determine_phase_finalize(
         self,
         controller: ReconcileController,
         hierarchical_manifest: Manifest,
     ) -> None:
-        """Phase is 'complete' when challenge done with no follow-ups."""
+        """Phase is 'finalize' when challenge done with no follow-ups (before finalize exists)."""
         chunks = [
             WorkItem(
                 work_id="c1",
@@ -946,6 +950,78 @@ class TestPhaseDetermination:
             WorkItemType.DOC_CHUNK: chunks,
             WorkItemType.DOC_MERGE: merges,
             WorkItemType.DOC_CHALLENGE: challenges,
+        }
+
+        phase = controller._determine_phase(hierarchical_manifest, work_items_by_type)
+        assert phase == "finalize"
+
+    def test_determine_phase_complete(
+        self,
+        controller: ReconcileController,
+        hierarchical_manifest: Manifest,
+    ) -> None:
+        """Phase is 'complete' when finalize is done."""
+        chunks = [
+            WorkItem(
+                work_id="c1",
+                work_type=WorkItemType.DOC_CHUNK,
+                status=WorkItemStatus.DONE,
+                payload=DocChunkPayload(
+                    job_id="test",
+                    chunk_id="chunk_1",
+                    chunk_locator=ChunkLocator(start_line=1, end_line=100),
+                    result_uri="s3://test/c1.json",
+                ),
+            ),
+        ]
+        merges = [
+            WorkItem(
+                work_id="m1",
+                work_type=WorkItemType.DOC_MERGE,
+                status=WorkItemStatus.DONE,
+                payload=DocMergePayload(
+                    job_id="test",
+                    merge_node_id="merge_1",
+                    input_uris=["s3://test/c1.json"],
+                    output_uri="s3://test/m1.json",
+                ),
+            ),
+        ]
+        challenges = [
+            WorkItem(
+                work_id="ch1",
+                work_type=WorkItemType.DOC_CHALLENGE,
+                status=WorkItemStatus.DONE,
+                payload=DocChallengePayload(
+                    job_id="test",
+                    doc_uri="s3://test/doc.md",
+                    doc_model_uri="s3://test/model.json",
+                    challenge_profile="standard",
+                    output_uri="s3://test/challenge.json",
+                ),
+                cycle_number=1,
+            ),
+        ]
+        finalizes = [
+            WorkItem(
+                work_id="fin1",
+                work_type=WorkItemType.DOC_FINALIZE,
+                status=WorkItemStatus.DONE,
+                payload=DocFinalizePayload(
+                    job_id="test",
+                    doc_uri="s3://test/doc.md",
+                    doc_model_uri="s3://test/model.json",
+                    output_doc_uri="s3://test/final/doc.md",
+                    output_trace_uri="s3://test/final/trace.json",
+                    output_summary_uri="s3://test/final/summary.json",
+                ),
+            ),
+        ]
+        work_items_by_type = {
+            WorkItemType.DOC_CHUNK: chunks,
+            WorkItemType.DOC_MERGE: merges,
+            WorkItemType.DOC_CHALLENGE: challenges,
+            WorkItemType.DOC_FINALIZE: finalizes,
         }
 
         phase = controller._determine_phase(hierarchical_manifest, work_items_by_type)

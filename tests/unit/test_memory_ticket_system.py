@@ -9,6 +9,9 @@ These tests verify the MemoryTicketSystem implementation including:
 """
 
 import pytest
+
+# Mark all tests in this module as unit tests
+pytestmark = pytest.mark.unit
 from datetime import datetime, timezone
 
 from atlas.adapters.memory_ticket_system import (

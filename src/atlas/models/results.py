@@ -521,3 +521,151 @@ class FollowupAnswer(BaseModel):
     evidence: list[Evidence] = Field(default_factory=list, description="Source references")
     confidence: float = Field(default=1.0, ge=0.0, le=1.0, description="Confidence score")
     metadata: dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
+
+
+class ChunkContribution(BaseModel):
+    """Contribution of a chunk to a documentation section.
+
+    Used in trace reports to track provenance.
+
+    Attributes:
+        chunk_id: The contributing chunk identifier.
+        confidence: Confidence score from chunk analysis.
+        open_questions: Any unresolved questions from this chunk.
+        line_range: Source line range (start, end).
+    """
+
+    chunk_id: str = Field(..., description="Contributing chunk identifier")
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0, description="Chunk confidence")
+    open_questions: list[str] = Field(default_factory=list, description="Unresolved questions")
+    line_range: tuple[int, int] | None = Field(default=None, description="Source line range")
+
+
+class SectionTrace(BaseModel):
+    """Trace information for a documentation section.
+
+    Maps a section to its source chunks and tracks the analysis history.
+
+    Attributes:
+        section_id: The documentation section identifier.
+        section_title: Section title for readability.
+        chunk_contributions: Chunks that contributed to this section.
+        challenger_iterations: Number of challenger review cycles.
+        issues_raised: Issue IDs raised for this section.
+        issues_resolved: Issue IDs resolved for this section.
+    """
+
+    section_id: str = Field(..., description="Documentation section identifier")
+    section_title: str = Field(default="", description="Section title")
+    chunk_contributions: list[ChunkContribution] = Field(
+        default_factory=list,
+        description="Contributing chunks",
+    )
+    challenger_iterations: int = Field(default=0, description="Review cycle count")
+    issues_raised: list[str] = Field(default_factory=list, description="Issues raised")
+    issues_resolved: list[str] = Field(default_factory=list, description="Issues resolved")
+
+
+class TraceReport(BaseModel):
+    """Trace report mapping documentation to source chunks.
+
+    Per spec section 6.8, the trace report provides:
+    - Per-section chunk contributions
+    - Per-chunk confidence and open questions
+    - Challenger iteration history
+    - Issues raised and resolved
+
+    Attributes:
+        job_id: Job identifier.
+        artifact_id: Source artifact identifier.
+        artifact_version: Source artifact version.
+        section_traces: Per-section trace information.
+        total_chunks: Total number of chunks analyzed.
+        total_sections: Total documentation sections.
+        total_issues_raised: Total issues identified by challenger.
+        total_issues_resolved: Total issues resolved.
+        final_cycle: Final challenger iteration number.
+        generated_at: ISO timestamp of report generation.
+    """
+
+    job_id: str = Field(..., description="Job identifier")
+    artifact_id: str = Field(..., description="Source artifact identifier")
+    artifact_version: str = Field(..., description="Source artifact version")
+    section_traces: list[SectionTrace] = Field(
+        default_factory=list,
+        description="Per-section traces",
+    )
+    total_chunks: int = Field(default=0, description="Total chunks analyzed")
+    total_sections: int = Field(default=0, description="Total documentation sections")
+    total_issues_raised: int = Field(default=0, description="Total issues raised")
+    total_issues_resolved: int = Field(default=0, description="Total issues resolved")
+    final_cycle: int = Field(default=1, description="Final challenger cycle")
+    generated_at: str = Field(default="", description="Report generation timestamp")
+
+
+class JobStatistics(BaseModel):
+    """Summary statistics for a completed documentation job.
+
+    Provides high-level metrics about the analysis run.
+
+    Attributes:
+        job_id: Job identifier.
+        artifact_id: Source artifact identifier.
+        status: Final job status (accepted, completed_with_issues, etc.).
+        total_chunks: Number of chunks analyzed.
+        total_merges: Number of merge operations.
+        challenger_cycles: Number of challenger iterations.
+        issues_raised: Total issues identified.
+        issues_resolved: Total issues resolved.
+        blockers_remaining: Unresolved blocker count.
+        average_confidence: Average chunk confidence score.
+        total_lines_analyzed: Total source lines processed.
+        duration_seconds: Total processing time if available.
+        final_doc_uri: URI of final documentation.
+        final_trace_uri: URI of trace report.
+    """
+
+    job_id: str = Field(..., description="Job identifier")
+    artifact_id: str = Field(..., description="Source artifact identifier")
+    status: str = Field(default="completed", description="Final job status")
+    total_chunks: int = Field(default=0, description="Chunks analyzed")
+    total_merges: int = Field(default=0, description="Merge operations")
+    challenger_cycles: int = Field(default=0, description="Challenger iterations")
+    issues_raised: int = Field(default=0, description="Issues identified")
+    issues_resolved: int = Field(default=0, description="Issues resolved")
+    blockers_remaining: int = Field(default=0, description="Unresolved blockers")
+    average_confidence: float = Field(default=0.0, description="Average confidence")
+    total_lines_analyzed: int = Field(default=0, description="Source lines processed")
+    duration_seconds: float | None = Field(default=None, description="Processing time")
+    final_doc_uri: str = Field(default="", description="Final documentation URI")
+    final_trace_uri: str = Field(default="", description="Trace report URI")
+
+
+class FinalizeResult(BaseModel):
+    """Output artifact for DOC_FINALIZE work items.
+
+    Contains references to all final deliverables produced.
+
+    Attributes:
+        job_id: Job identifier.
+        artifact_id: Source artifact identifier.
+        artifact_version: Source artifact version.
+        status: Finalization status (accepted, completed_with_warnings).
+        doc_uri: URI of final Markdown documentation.
+        pdf_uri: Optional URI of PDF documentation.
+        trace_uri: URI of trace report.
+        summary_uri: URI of job statistics.
+        warnings: Any warnings from finalization.
+        metadata: Additional metadata.
+    """
+
+    job_id: str = Field(..., description="Job identifier")
+    artifact_id: str = Field(..., description="Source artifact identifier")
+    artifact_version: str = Field(..., description="Source artifact version")
+    status: str = Field(default="accepted", description="Finalization status")
+    doc_uri: str = Field(..., description="Final documentation URI")
+    pdf_uri: str | None = Field(default=None, description="PDF documentation URI")
+    trace_uri: str = Field(..., description="Trace report URI")
+    summary_uri: str = Field(..., description="Job statistics URI")
+    warnings: list[str] = Field(default_factory=list, description="Finalization warnings")
+    metadata: dict[str, Any] = Field(default_factory=dict, description="Additional metadata")

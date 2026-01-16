@@ -9,6 +9,9 @@ Tests cover:
 
 import os
 import pytest
+
+# Mark all tests in this module as unit tests
+pytestmark = pytest.mark.unit
 from unittest.mock import patch
 
 from atlas.config import (

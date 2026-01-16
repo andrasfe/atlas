@@ -1,6 +1,9 @@
 """Unit tests for the Controller reconcile loop."""
 
 import pytest
+
+# Mark all tests in this module as unit tests
+pytestmark = pytest.mark.unit
 from unittest.mock import AsyncMock, MagicMock
 
 from atlas.controller.reconciler import ReconcileController

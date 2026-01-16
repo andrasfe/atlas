@@ -1,6 +1,9 @@
 """Tests for metrics collection."""
 
 import pytest
+
+# Mark all tests in this module as unit tests
+pytestmark = pytest.mark.unit
 import time
 
 from atlas.observability.metrics import (

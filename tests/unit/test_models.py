@@ -10,6 +10,9 @@ Comprehensive tests for all core data models including:
 
 import json
 import pytest
+
+# Mark all tests in this module as unit tests
+pytestmark = pytest.mark.unit
 from pydantic import ValidationError
 
 from atlas.models.enums import (

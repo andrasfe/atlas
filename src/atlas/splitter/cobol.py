@@ -65,12 +65,30 @@ class COBOLSplitter(Splitter):
         - Ensures chunks fit within context budget
         - Creates chunk kinds to support targeted follow-ups
 
+    Artifact Types:
+        This splitter handles the following artifact types:
+        - "cobol": COBOL source programs (.cbl, .cob files)
+        - "copybook": COBOL copybooks (.cpy files)
+
     Example:
         >>> splitter = COBOLSplitter()
         >>> profile = SplitterProfile(max_chunk_tokens=3500)
         >>> result = splitter.split(cobol_source, profile, "DRKBM100.cbl")
         >>> print(f"Created {len(result.chunks)} chunks")
     """
+
+    @classmethod
+    def get_artifact_types(cls) -> list[str]:
+        """Return the artifact types this splitter handles.
+
+        The COBOLSplitter handles COBOL source programs and copybooks.
+        Both share similar structure and can be processed with the
+        same semantic parsing logic.
+
+        Returns:
+            List containing "cobol" and "copybook".
+        """
+        return ["cobol", "copybook"]
 
     # COBOL division patterns (case-insensitive)
     # Format: DIVISION-NAME DIVISION.

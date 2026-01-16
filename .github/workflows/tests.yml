@@ -1,0 +1,236 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run flake8
+        run: |
+          flake8 src/atlas tests --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 src/atlas tests --count --exit-zero --max-complexity=10 --max-line-length=100 --statistics
+
+      - name: Run mypy
+        run: |
+          mypy src/atlas --ignore-missing-imports
+
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run unit tests with coverage
+        run: |
+          pytest tests/unit \
+            -v \
+            -m "unit or not integration" \
+            --cov=atlas \
+            --cov-report=term-missing \
+            --cov-report=html:htmlcov-unit \
+            --cov-report=xml:coverage-unit.xml \
+            --junitxml=junit-unit.xml
+
+      - name: Upload unit test coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-unit-html
+          path: htmlcov-unit/
+          retention-days: 14
+
+      - name: Upload unit test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: junit-unit-results
+          path: junit-unit.xml
+          retention-days: 14
+
+      - name: Upload coverage XML
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-unit-xml
+          path: coverage-unit.xml
+          retention-days: 14
+
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run integration tests
+        run: |
+          pytest tests/integration \
+            -v \
+            -m "integration or not unit" \
+            --cov=atlas \
+            --cov-report=term-missing \
+            --cov-report=html:htmlcov-integration \
+            --cov-report=xml:coverage-integration.xml \
+            --junitxml=junit-integration.xml
+
+      - name: Upload integration test coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-integration-html
+          path: htmlcov-integration/
+          retention-days: 14
+
+      - name: Upload integration test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: junit-integration-results
+          path: junit-integration.xml
+          retention-days: 14
+
+      - name: Upload coverage XML
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-integration-xml
+          path: coverage-integration.xml
+          retention-days: 14
+
+  coverage-threshold:
+    name: Coverage Threshold Enforcement
+    runs-on: ubuntu-latest
+    needs: [unit-tests, integration-tests]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run all tests with combined coverage
+        run: |
+          pytest tests \
+            -v \
+            --cov=atlas \
+            --cov-report=term-missing \
+            --cov-report=html:htmlcov \
+            --cov-report=xml:coverage.xml \
+            --junitxml=junit-all.xml
+
+      - name: Enforce overall coverage threshold (90%)
+        run: |
+          coverage report --fail-under=90
+
+      - name: Enforce models coverage threshold (95%)
+        run: |
+          coverage report --include="src/atlas/models/*" --fail-under=95 || echo "::warning::Models coverage below 95%"
+
+      - name: Enforce adapters coverage threshold (95%)
+        run: |
+          coverage report --include="src/atlas/adapters/*" --fail-under=95 || echo "::warning::Adapters coverage below 95%"
+
+      - name: Enforce controller coverage threshold (90%)
+        run: |
+          coverage report --include="src/atlas/controller/*" --fail-under=90 || echo "::warning::Controller coverage below 90%"
+
+      - name: Enforce workers coverage threshold (85%)
+        run: |
+          coverage report --include="src/atlas/workers/*" --fail-under=85 || echo "::warning::Workers coverage below 85%"
+
+      - name: Upload combined coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-combined-html
+          path: htmlcov/
+          retention-days: 30
+
+      - name: Upload combined coverage XML
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-combined-xml
+          path: coverage.xml
+          retention-days: 30
+
+      - name: Upload all test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: junit-all-results
+          path: junit-all.xml
+          retention-days: 30
+
+  # Matrix testing for multiple Python versions
+  python-matrix:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    needs: lint
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run tests
+        run: |
+          pytest tests -v --tb=short

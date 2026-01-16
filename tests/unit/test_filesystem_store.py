@@ -10,6 +10,9 @@ These tests verify the FilesystemArtifactStore implementation including:
 
 import json
 import pytest
+
+# Mark all tests in this module as unit tests
+pytestmark = pytest.mark.unit
 import tempfile
 from pathlib import Path
 

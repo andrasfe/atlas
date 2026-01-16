@@ -168,6 +168,38 @@ class DocPatchMergePayload(WorkItemPayload):
     output_doc_model_uri: str = Field(..., description="URI for updated doc model")
 
 
+class DocFinalizePayload(WorkItemPayload):
+    """Payload for DOC_FINALIZE work items.
+
+    Request to produce final deliverables and mark the job as accepted.
+
+    Per spec section 6.8, the finalize phase:
+    - Produces final deliverables (Markdown documentation, optional PDF)
+    - Generates trace report (chunk to doc section mapping)
+    - Creates summary statistics
+    - Marks the DOC_REQUEST as fully complete
+
+    Attributes:
+        doc_uri: URI of the final documentation to package.
+        doc_model_uri: URI of the final documentation model.
+        output_doc_uri: URI for the final Markdown deliverable.
+        output_pdf_uri: Optional URI for PDF deliverable.
+        output_trace_uri: URI for the trace report.
+        output_summary_uri: URI for summary statistics.
+        generate_pdf: Whether to generate PDF output.
+        cleanup_intermediates: Whether to cleanup intermediate artifacts.
+    """
+
+    doc_uri: str = Field(..., description="URI of final documentation")
+    doc_model_uri: str = Field(..., description="URI of final documentation model")
+    output_doc_uri: str = Field(..., description="URI for final Markdown deliverable")
+    output_pdf_uri: str | None = Field(default=None, description="URI for PDF deliverable")
+    output_trace_uri: str = Field(..., description="URI for trace report")
+    output_summary_uri: str = Field(..., description="URI for summary statistics")
+    generate_pdf: bool = Field(default=False, description="Generate PDF output")
+    cleanup_intermediates: bool = Field(default=False, description="Cleanup intermediate artifacts")
+
+
 class WorkItem(BaseModel):
     """A unit of work tracked in a ticketing system.
 
