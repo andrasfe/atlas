@@ -20,12 +20,11 @@ Design Principles:
 - Create chunk kinds to support targeted follow-ups
 
 Usage:
-    >>> from atlas.splitter import get_default_registry
-    >>> registry = get_default_registry()
-    >>> splitter = registry.get_splitter("cobol")
+    >>> from atlas.splitter import get_splitter
+    >>> splitter = get_splitter("cobol")
     >>> result = splitter.split(source, profile, "program.cbl")
 
-Or directly:
+Or via registry directly:
     >>> from atlas.splitter import COBOLSplitter, LineBasedSplitter
     >>> splitter = COBOLSplitter()
     >>> result = splitter.split(source, profile, "program.cbl")
@@ -41,6 +40,30 @@ from atlas.splitter.registry import (
     reset_default_registry,
 )
 
+
+def get_splitter(artifact_type: str) -> Splitter:
+    """Get a splitter for the given artifact type.
+
+    Convenience function that wraps get_default_registry().get_splitter().
+
+    Args:
+        artifact_type: The artifact type (e.g., "cobol", "jcl").
+
+    Returns:
+        A Splitter instance for the artifact type.
+
+    Raises:
+        SplitterNotFoundError: If no splitter is registered for the type
+            and no fallback is available.
+
+    Example:
+        >>> from atlas.splitter import get_splitter
+        >>> splitter = get_splitter("cobol")
+        >>> result = splitter.split(source, profile, "program.cbl")
+    """
+    return get_default_registry().get_splitter(artifact_type)
+
+
 __all__ = [
     # Base classes
     "Splitter",
@@ -49,6 +72,7 @@ __all__ = [
     "SplitterRegistry",
     "SplitterNotFoundError",
     "get_default_registry",
+    "get_splitter",
     "reset_default_registry",
     # Concrete implementations
     "COBOLSplitter",
