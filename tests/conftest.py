@@ -1,9 +1,12 @@
 """Pytest configuration and shared fixtures.
 
 This module provides fixtures for testing Atlas components:
-- Mock adapters (ticket system, artifact store, LLM)
+- Mock adapters (ticket system, artifact store)
 - Sample data (artifacts, work items, manifests)
 - Test utilities
+
+Note: Atlas does NOT include LLM mocks. The integrating system provides
+workers that wrap their own agents with LLM access.
 """
 
 import pytest
@@ -28,7 +31,6 @@ from atlas.models.enums import (
 )
 from atlas.adapters.ticket_system import TicketSystemAdapter
 from atlas.adapters.artifact_store import ArtifactStoreAdapter
-from atlas.adapters.llm import LLMAdapter, LLMMessage, LLMResponse
 
 
 # -----------------------------------------------------------------------------
@@ -211,69 +213,6 @@ class MockArtifactStore(ArtifactStoreAdapter):
         return hashlib.sha256(content).hexdigest()
 
 
-class MockLLM(LLMAdapter):
-    """Mock LLM for testing.
-
-    Returns canned responses for predictable testing.
-
-    TODO: Add more sophisticated mock responses.
-    """
-
-    def __init__(self, responses: list[str] | None = None) -> None:
-        self._responses = responses or ["Mock response"]
-        self._response_index = 0
-        self._calls: list[list[LLMMessage]] = []
-
-    async def complete(
-        self,
-        messages: list[LLMMessage],
-        *,
-        temperature: float = 0.0,
-        max_tokens: int | None = None,
-        json_mode: bool = False,
-        stop_sequences: list[str] | None = None,
-    ) -> LLMResponse:
-        self._calls.append(messages)
-        response_text = self._responses[self._response_index % len(self._responses)]
-        self._response_index += 1
-        return LLMResponse(
-            content=response_text,
-            usage={"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150},
-            model="mock-model",
-        )
-
-    async def complete_json(
-        self,
-        messages: list[LLMMessage],
-        schema: dict[str, Any] | None = None,
-        *,
-        temperature: float = 0.0,
-        max_tokens: int | None = None,
-    ) -> dict[str, Any]:
-        response = await self.complete(messages, temperature=temperature, json_mode=True)
-        import json
-        try:
-            return json.loads(response.content)
-        except json.JSONDecodeError:
-            return {"content": response.content}
-
-    def count_tokens(self, text: str) -> int:
-        # Approximate: ~4 chars per token
-        return len(text) // 4
-
-    def count_message_tokens(self, messages: list[LLMMessage]) -> int:
-        total = sum(self.count_tokens(m.content) for m in messages)
-        # Add overhead for message formatting
-        return total + len(messages) * 4
-
-    def get_context_limit(self) -> int:
-        return 8000
-
-    @property
-    def model_name(self) -> str:
-        return "mock-model"
-
-
 # -----------------------------------------------------------------------------
 # Fixtures
 # -----------------------------------------------------------------------------
@@ -289,12 +228,6 @@ def mock_ticket_system() -> MockTicketSystem:
 def mock_artifact_store() -> MockArtifactStore:
     """Provide a mock artifact store."""
     return MockArtifactStore()
-
-
-@pytest.fixture
-def mock_llm() -> MockLLM:
-    """Provide a mock LLM."""
-    return MockLLM()
 
 
 @pytest.fixture

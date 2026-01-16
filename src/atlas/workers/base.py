@@ -3,6 +3,10 @@
 Workers are agents that claim work items and produce output artifacts.
 This base class provides common functionality for all worker types.
 
+Atlas does NOT call LLMs directly. The integrating system implements
+concrete workers that wrap their own agents. Those agents handle all
+LLM interactions internally.
+
 Key Requirements:
 - Claim work items atomically (only one worker succeeds)
 - Write outputs to deterministic URIs
@@ -15,7 +19,6 @@ from typing import Any
 
 from atlas.adapters.ticket_system import TicketSystemAdapter
 from atlas.adapters.artifact_store import ArtifactStoreAdapter
-from atlas.adapters.llm import LLMAdapter
 from atlas.models.work_item import WorkItem
 from atlas.models.enums import WorkItemStatus, WorkItemType
 
@@ -24,24 +27,26 @@ class Worker(ABC):
     """Abstract base class for all analysis workers.
 
     Workers implement the actual analysis logic for different work types.
-    They claim work items, perform analysis using LLMs, and write
-    structured output artifacts.
+    The integrating system provides concrete implementations that wrap
+    their agents. Atlas workers do NOT call LLMs directly.
 
     Design Principles:
         - Idempotent: If output exists and is valid, mark DONE without recomputation
         - Explicit uncertainty: Record "unknowns" / "open questions" rather than guessing
         - Bounded context: Never exceed context budget
+        - Integrator owns LLM: Atlas orchestrates; your agents call LLMs
 
     Example Implementation:
-        >>> class SimpleScribe(Scribe):
-        ...     async def process_chunk(self, work_item, chunk_content):
-        ...         # Analyze chunk using LLM
-        ...         result = await self.llm.complete_json(messages, schema)
-        ...         # Write result
+        >>> class MyScribeWorker(Worker):
+        ...     def __init__(self, my_scribe_agent, ticket_system, artifact_store):
+        ...         super().__init__("scribe-1", ticket_system, artifact_store)
+        ...         self.scribe = my_scribe_agent  # Your agent handles LLM
+        ...
+        ...     async def process(self, work_item):
+        ...         content = await self.artifact_store.read(...)
+        ...         result = await self.scribe.analyze(content)  # Delegate to your agent
         ...         await self.artifact_store.write_json(output_uri, result)
-        ...         return ChunkResult(**result)
-
-    TODO: Implement concrete workers for each work type.
+        ...         return result
     """
 
     def __init__(
@@ -49,7 +54,6 @@ class Worker(ABC):
         worker_id: str,
         ticket_system: TicketSystemAdapter,
         artifact_store: ArtifactStoreAdapter,
-        llm: LLMAdapter,
     ):
         """Initialize the worker.
 
@@ -57,12 +61,10 @@ class Worker(ABC):
             worker_id: Unique identifier for this worker instance.
             ticket_system: Ticket system adapter.
             artifact_store: Artifact store adapter.
-            llm: LLM adapter for analysis.
         """
         self.worker_id = worker_id
         self.ticket_system = ticket_system
         self.artifact_store = artifact_store
-        self.llm = llm
 
     @property
     @abstractmethod
